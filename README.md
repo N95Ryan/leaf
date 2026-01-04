@@ -1,4 +1,4 @@
-# Leaf 🌱
+# 🌱 Leaf
 
 > A elegant, blazingly fast markdown note manager that lives in your terminal.
 
