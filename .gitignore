@@ -1,0 +1,35 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/leaf
+/leaf.exe
+*.o
+*.a
+
+# Dependency files
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (personal notes)
+doc/
+ARCHITECTURE.md
+JOURNAL.md
+TODO.md
+
+# Logs
+*.log
+

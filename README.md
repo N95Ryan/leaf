@@ -39,7 +39,3 @@ go run ./cmd/leaf
 ## 📝 License
 
 MIT License - See [LICENSE](LICENSE) file for details.
-
----
-
-**Built with ❤️ in Go. Made for developers who love the terminal.**
