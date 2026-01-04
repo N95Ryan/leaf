@@ -1,8 +1,9 @@
 package storage
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Note represents a markdown note with its metadata
@@ -27,8 +28,7 @@ func NewNote(title, content string) *Note {
 	}
 }
 
-// generateID generates a unique ID for a note
-// TODO: Implement ID generation (UUID or timestamp-based)
+// generateID generates a unique ID for a note using UUID v4
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }
