@@ -33,3 +33,10 @@ TODO.md
 # Logs
 *.log
 
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+test-results.json
+test-results.xml
+
