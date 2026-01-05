@@ -25,7 +25,7 @@ Leaf is a **Terminal User Interface (TUI) application** built with Go that lets 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/leaf.git
+git clone https://github.com/N95Ryan/leaf.git
 cd leaf
 
 # Install dependencies
