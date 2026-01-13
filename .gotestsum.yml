@@ -1,0 +1,14 @@
+# gotestsum configuration for Leaf project
+# https://github.com/gotestyourself/gotestsum
+
+# Default format when running gotestsum
+format: pkgname-and-test-fails
+
+# Show package names
+packages: ./...
+
+# Options to pass to go test
+# -v: verbose output
+# -cover: show coverage
+# -race: enable race detector (optional, slower)
+# -timeout: test timeout
