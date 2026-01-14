@@ -1,14 +1,14 @@
 # gotestsum configuration for Leaf project
+# Run with: gotestsum
 # https://github.com/gotestyourself/gotestsum
 
-# Default format when running gotestsum
+# Default format (already has emojis built-in)
+# Available formats:
+#   - pkgname-and-test-fails (✓/✗ icons, shows failures)
+#   - testname (✓/✗ icons, all tests)
+#   - standard-verbose (detailed output)
+#   - dots (. for pass, x for fail)
 format: pkgname-and-test-fails
 
-# Show package names
+# Packages to test
 packages: ./...
-
-# Options to pass to go test
-# -v: verbose output
-# -cover: show coverage
-# -race: enable race detector (optional, slower)
-# -timeout: test timeout
