@@ -86,13 +86,13 @@ func TestBestPractices(t *testing.T) {
 	t.Run("use formatted messages", func(t *testing.T) {
 		assert := testutil.New(t)
 		
-		for i := 0; i < 3; i++ {
-			value := i * 2
-			expected := i * 2
-			
-			// Using formatted messages with context
-			assert.Equal(expected, value, "iteration %d: value should be %d", i, expected)
-		}
+	for i := 0; i < 3; i++ {
+		value := i * 2
+		expected := i * 2
+		
+		// Using simple messages (no printf formatting in Equal)
+		assert.Equal(expected, value, "value should match expected in loop iteration")
+	}
 	})
 	
 	t.Run("group related assertions", func(t *testing.T) {
