@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/N95Ryan/leaf/internal/storage"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -37,6 +38,10 @@ type Model struct {
 	// UI
 	width  int
 	height int
+
+	//Title
+	titleInput   textinput.Model
+	creatingNote *storage.Note
 }
 
 // NewModel creates a new model with initial state
@@ -52,12 +57,24 @@ func NewModel() Model {
 	}
 
 	return Model{
-		mode:        ModeList,
-		notes:       []*storage.Note{},
-		selectedIdx: 0,
-		storage:     fs,
-		lastError:   lastErr,
+		mode:         ModeList,
+		notes:        []*storage.Note{},
+		selectedIdx:  0,
+		storage:      fs,
+		lastError:    lastErr,
+		titleInput:   newTitleInput(),
+		creatingNote: nil,
 	}
+}
+
+// newTitleInput creates a new title input component
+func newTitleInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "Enter your note title"
+	ti.Focus()
+	ti.CharLimit = 100
+	ti.Width = 50
+	return ti
 }
 
 // Init is called when the program starts (Bubbletea)

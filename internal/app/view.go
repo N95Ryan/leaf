@@ -41,6 +41,7 @@ func (m Model) renderList() string {
 	}
 
 	b.WriteString("\nShortcuts: n (new), e (edit), / (search), q (quit)")
+	b.WriteString(m.renderError())
 
 	return b.String()
 }
@@ -55,6 +56,7 @@ func (m Model) renderEdit() string {
 	b.WriteString(fmt.Sprintf("Editing: %s\n\n", m.currentNote.Title))
 	b.WriteString(m.currentNote.Content)
 	b.WriteString("\n\nPress 'esc' to return to list")
+	b.WriteString(m.renderError())
 
 	return b.String()
 }
@@ -66,15 +68,31 @@ func (m Model) renderSearch() string {
 	b.WriteString(m.searchQuery)
 	b.WriteString("_\n\n")
 	b.WriteString("Type your search and press 'esc' to cancel")
+	b.WriteString(m.renderError())
 
 	return b.String()
 }
 
 // renderCreate displays the note creation interface
 func (m Model) renderCreate() string {
-	return "Create a new note\n\n" +
-		"Title: _\n\n" +
-		"Press 'esc' to cancel"
+	var b strings.Builder
+
+	b.WriteString("🌱 Create a new note\n\n")
+	b.WriteString("Title:\n")
+	b.WriteString(m.titleInput.View())
+	b.WriteString("\n\n")
+	b.WriteString("Shortcuts: Enter (create), Esc (cancel)")
+	b.WriteString(m.renderError())
+
+	return b.String()
+}
+
+// renderError displays error messages if any
+func (m Model) renderError() string {
+	if m.lastError == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n❌ Error: %s\n", m.lastError)
 }
 
 // TODO: Add Lipgloss styling to improve appearance
