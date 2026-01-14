@@ -62,8 +62,13 @@ func NewModel() Model {
 
 // Init is called when the program starts (Bubbletea)
 func (m Model) Init() tea.Cmd {
+	// If storage failed to initialize, don't try to load notes
+	if m.storage == nil {
+		return nil
+	}
+
 	// Return a command to load notes at startup
-	return nil // TODO: Return a command to load notes
+	return loadNotesCmd(m.storage)
 }
 
 // Getters for testing and external access

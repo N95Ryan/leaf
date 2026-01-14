@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"github.com/N95Ryan/leaf/internal/storage"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -39,9 +41,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case NoteLoadedMsg:
 		if msg.Err != nil {
-			// TODO: Handle error (display in view)
+			// Store error message to display in view
+			m.lastError = msg.Err.Error()
 			return m, nil
 		}
+		// Clear any previous error and store loaded notes
+		m.lastError = ""
 		m.notes = msg.Notes
 		return m, nil
 
@@ -112,4 +117,17 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// loadNotesCmd is a command that loads all notes from storage
+// It runs asynchronously and returns a NoteLoadedMsg
+func loadNotesCmd(fs storage.FileSystem) tea.Cmd {
+	return func() tea.Msg {
+		// Use background context for loading notes
+		notes, err := fs.ListNotes(context.Background())
+		return NoteLoadedMsg{
+			Notes: notes,
+			Err:   err,
+		}
+	}
 }
