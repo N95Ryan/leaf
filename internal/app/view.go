@@ -11,6 +11,8 @@ func (m Model) View() string {
 	switch m.mode {
 	case ModeList:
 		return m.renderList()
+	case ModeView:
+		return m.renderView()
 	case ModeEdit:
 		return m.renderEdit()
 	case ModeSearch:
@@ -40,7 +42,24 @@ func (m Model) renderList() string {
 		}
 	}
 
-	b.WriteString("\nShortcuts: n (new), e (edit), / (search), q (quit)")
+	b.WriteString("\nShortcuts: n (new), r (read), e (edit), t (sort), d (delete), q (quit)")
+	b.WriteString(m.renderSortIndicator())
+	b.WriteString(m.renderDeleteConfirm())
+	b.WriteString(m.renderError())
+
+	return b.String()
+}
+
+// renderView displays the note in read-only mode
+func (m Model) renderView() string {
+	if m.currentNote == nil {
+		return "No note selected"
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("📖 %s\n\n", m.currentNote.Title))
+	b.WriteString(m.currentNote.Content)
+	b.WriteString("\n\nShortcuts: i/e (edit), Esc (back to list)")
 	b.WriteString(m.renderError())
 
 	return b.String()
@@ -53,9 +72,26 @@ func (m Model) renderEdit() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Editing: %s\n\n", m.currentNote.Title))
-	b.WriteString(m.currentNote.Content)
-	b.WriteString("\n\nPress 'esc' to return to list")
+	b.WriteString("✏️  Editing note\n\n")
+
+	// Show title input
+	focusIndicator := " "
+	if m.editFocus == "title" {
+		focusIndicator = "›"
+	}
+	b.WriteString(fmt.Sprintf("%s Title:\n", focusIndicator))
+	b.WriteString(m.titleInput.View())
+	b.WriteString("\n\n")
+
+	// Show content editor
+	focusIndicator = " "
+	if m.editFocus == "content" {
+		focusIndicator = "›"
+	}
+	b.WriteString(fmt.Sprintf("%s Content:\n", focusIndicator))
+	b.WriteString(m.contentEditor.View())
+
+	b.WriteString("\n\nShortcuts: Tab (switch field), Ctrl+S (save), Esc (cancel)")
 	b.WriteString(m.renderError())
 
 	return b.String()
@@ -78,13 +114,55 @@ func (m Model) renderCreate() string {
 	var b strings.Builder
 
 	b.WriteString("🌱 Create a new note\n\n")
-	b.WriteString("Title:\n")
-	b.WriteString(m.titleInput.View())
-	b.WriteString("\n\n")
-	b.WriteString("Shortcuts: Enter (create), Esc (cancel)")
+
+	// Show title input or content editor based on editMode
+	if m.editMode == "title" {
+		b.WriteString("Title:\n")
+		b.WriteString(m.titleInput.View())
+		b.WriteString("\n\n")
+		b.WriteString("Shortcuts: Enter (next), Esc (cancel)")
+	} else {
+		// Show title as read-only and content editor
+		if m.creatingNote != nil {
+			b.WriteString(fmt.Sprintf("Title: %s\n\n", m.creatingNote.Title))
+		}
+		b.WriteString("Content:\n")
+		b.WriteString(m.contentEditor.View())
+		b.WriteString("\n\n")
+		b.WriteString("Shortcuts: Ctrl+S (save), Esc (back to title)")
+	}
+
 	b.WriteString(m.renderError())
 
 	return b.String()
+}
+
+// renderDeleteConfirm displays the delete confirmation message
+func (m Model) renderDeleteConfirm() string {
+	if !m.deleteConfirm || m.noteToDelete == nil {
+		return ""
+	}
+	return fmt.Sprintf("\n⚠️  Press 'd' again to confirm deletion of '%s' (Esc to cancel)", m.noteToDelete.Title)
+}
+
+// renderSortIndicator displays the current sort mode
+func (m Model) renderSortIndicator() string {
+	var sortName string
+	switch m.sortMode {
+	case SortByUpdatedDesc:
+		sortName = "Updated ↓"
+	case SortByUpdatedAsc:
+		sortName = "Updated ↑"
+	case SortByCreatedDesc:
+		sortName = "Created ↓"
+	case SortByCreatedAsc:
+		sortName = "Created ↑"
+	case SortByTitleAsc:
+		sortName = "Title A-Z"
+	case SortByTitleDesc:
+		sortName = "Title Z-A"
+	}
+	return fmt.Sprintf("\n[Sort: %s]", sortName)
 }
 
 // renderError displays error messages if any
