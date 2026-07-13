@@ -10,13 +10,17 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("63")) // Purple
 
+	AppTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#a0cd51"))
+
 	// List styles
 	ListItemStyle = lipgloss.NewStyle().
 			PaddingLeft(2)
 
 	SelectedItemStyle = lipgloss.NewStyle().
 				PaddingLeft(2).
-				Foreground(lipgloss.Color("63")).
+				Foreground(lipgloss.Color("#69d7e3")).
 				Bold(true)
 
 	// Editor styles
@@ -30,6 +34,16 @@ var (
 			Background(lipgloss.Color("236")).
 			Foreground(lipgloss.Color("252")).
 			Padding(0, 1)
+
+	ShortcutKeyStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("220"))
+
+	ShortcutLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252"))
+
+	ShortcutSepStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240"))
 
 	// Error message styles
 	ErrorStyle = lipgloss.NewStyle().

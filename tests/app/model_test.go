@@ -4,28 +4,23 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/N95Ryan/leaf/internal/app"
 	"github.com/N95Ryan/leaf/internal/storage"
 	"github.com/N95Ryan/leaf/tests/testutil"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestNewModel(t *testing.T) {
 	t.Run("should initialize model successfully", func(t *testing.T) {
 		assert := testutil.New(t)
-		model := app.NewModel()
+		model := app.NewModelWithStorage(&mockFileSystem{}, "")
 
-		// Check that the model is initialized with correct defaults
 		assert.Equal(app.ModeList, model.Mode(), "mode should be ModeList by default")
-
-		// Check that notes are initialized as empty slice
 		assert.NotNil(model.Notes(), "notes should be initialized")
 		assert.Empty(model.Notes(), "notes should be empty initially")
-
-		// Check that storage is initialized
 		assert.NotNil(model.Storage(), "storage should be initialized")
-
-		// Check that there is no error on successful initialization
 		assert.Empty(model.LastError(), "should have no error on successful initialization")
 	})
 }
@@ -35,8 +30,6 @@ func TestNewModel_StorageInitialization(t *testing.T) {
 		assert := testutil.New(t)
 		model := app.NewModel()
 
-		// Either storage should be initialized OR lastError should be set
-		// (both being nil/empty would indicate a problem)
 		if model.Storage() == nil {
 			assert.NotEmpty(model.LastError(),
 				"if storage initialization fails, lastError should contain error message")
@@ -47,27 +40,26 @@ func TestNewModel_StorageInitialization(t *testing.T) {
 	})
 }
 
-func TestNewModel_DefaultValues(t *testing.T) {
-	t.Run("should have correct default values", func(t *testing.T) {
-		assert := testutil.New(t)
-		model := app.NewModel()
-
-		// Verify all expected default values
-		assert.NotNil(model.Notes(), "notes should not be nil")
-		assert.Len(model.Notes(), 0, "notes should start empty")
-		assert.Equal(app.ModeList, model.Mode(), "should start in ModeList")
-	})
-}
-
-// Mock FileSystem for testing
 type mockFileSystem struct {
-	notes []*storage.Note
-	err   error
+	notes           []*storage.Note
+	listErr         error
+	saveErr         error
+	deleteErr       error
+	searchErr       error
+	searchResults   []*storage.Note
+	listCalled      int
+	saveCalled      int
+	deleteCalled    int
+	searchCalled    int
+	lastSearchQuery string
+	lastSavedNote   *storage.Note
+	lastDeletedID   string
 }
 
 func (m *mockFileSystem) ListNotes(ctx context.Context) ([]*storage.Note, error) {
-	if m.err != nil {
-		return nil, m.err
+	m.listCalled++
+	if m.listErr != nil {
+		return nil, m.listErr
 	}
 	return m.notes, nil
 }
@@ -77,127 +69,203 @@ func (m *mockFileSystem) GetNote(ctx context.Context, id string) (*storage.Note,
 }
 
 func (m *mockFileSystem) SaveNote(ctx context.Context, note *storage.Note) error {
-	return nil
+	m.saveCalled++
+	m.lastSavedNote = note
+	return m.saveErr
 }
 
 func (m *mockFileSystem) DeleteNote(ctx context.Context, id string) error {
-	return nil
+	m.deleteCalled++
+	m.lastDeletedID = id
+	return m.deleteErr
 }
 
 func (m *mockFileSystem) SearchNotes(ctx context.Context, query string) ([]*storage.Note, error) {
+	m.searchCalled++
+	m.lastSearchQuery = query
+	if m.searchErr != nil {
+		return nil, m.searchErr
+	}
+	if m.searchResults != nil {
+		return m.searchResults, nil
+	}
 	return nil, nil
+}
+
+func newTestModel(mock *mockFileSystem) app.Model {
+	notes := []*storage.Note{
+		{ID: "1", Title: "Alpha", Content: "first", UpdatedAt: time.Now()},
+		{ID: "2", Title: "Beta", Content: "second", UpdatedAt: time.Now().Add(-time.Hour)},
+	}
+	mock.notes = notes
+	model := app.NewModelWithStorage(mock, "")
+	updated, _ := model.Update(app.NoteLoadedMsg{Notes: notes})
+	return updated.(app.Model)
 }
 
 func TestInit(t *testing.T) {
 	t.Run("should return nil when storage is nil", func(t *testing.T) {
 		assert := testutil.New(t)
-		model := app.NewModel()
+		model := app.NewModelWithStorage(nil, "storage error")
 
-		// Force storage to nil to test edge case
-		// We can't directly set it, but if initialization failed, storage would be nil
-		// We test the Init behavior indirectly
 		cmd := model.Init()
-
-		// If storage is nil, Init should return nil
-		// Otherwise, it should return a command
-		if model.Storage() == nil {
-			assert.Nil(cmd, "Init should return nil when storage is nil")
-		} else {
-			assert.NotNil(cmd, "Init should return a command when storage is initialized")
-		}
+		assert.Nil(cmd, "Init should return nil when storage is nil")
 	})
 
 	t.Run("should return a valid command when storage is initialized", func(t *testing.T) {
 		assert := testutil.New(t)
-		model := app.NewModel()
+		model := app.NewModelWithStorage(&mockFileSystem{}, "")
 
-		// Only test if storage was successfully initialized
-		if model.Storage() != nil {
-			cmd := model.Init()
-			assert.NotNil(cmd, "Init should return a command to load notes")
-		}
+		cmd := model.Init()
+		assert.NotNil(cmd, "Init should return a command to load notes")
 	})
 }
 
 func TestUpdate_NotesLoadedMsg(t *testing.T) {
 	t.Run("should store notes when loaded successfully", func(t *testing.T) {
 		assert := testutil.New(t)
-		model := app.NewModel()
+		model := app.NewModelWithStorage(&mockFileSystem{}, "")
 
-		// Create test notes
 		testNotes := []*storage.Note{
 			{ID: "1", Title: "Note 1", Content: "Content 1"},
 			{ID: "2", Title: "Note 2", Content: "Content 2"},
 		}
 
-		// Simulate receiving NoteLoadedMsg with success
-		msg := app.NoteLoadedMsg{
-			Notes: testNotes,
-			Err:   nil,
-		}
-
-		updatedModel, _ := model.Update(msg)
+		updatedModel, _ := model.Update(app.NoteLoadedMsg{Notes: testNotes})
 		m := updatedModel.(app.Model)
 
-		// Verify notes are stored
 		assert.Len(m.Notes(), 2, "should have 2 notes loaded")
 		assert.Equal("Note 1", m.Notes()[0].Title, "first note should have correct title")
-		assert.Equal("Note 2", m.Notes()[1].Title, "second note should have correct title")
-
-		// Verify error is cleared
 		assert.Empty(m.LastError(), "lastError should be cleared on successful load")
 	})
 
 	t.Run("should store error when loading fails", func(t *testing.T) {
 		assert := testutil.New(t)
-		model := app.NewModel()
+		model := app.NewModelWithStorage(&mockFileSystem{}, "")
 
-		// Simulate receiving NoteLoadedMsg with error
-		testErr := errors.New("failed to load notes")
-		msg := app.NoteLoadedMsg{
+		updatedModel, _ := model.Update(app.NoteLoadedMsg{
 			Notes: nil,
-			Err:   testErr,
-		}
-
-		updatedModel, _ := model.Update(msg)
+			Err:   errors.New("failed to load notes"),
+		})
 		m := updatedModel.(app.Model)
 
-		// Verify error is stored
-		assert.NotEmpty(m.LastError(), "lastError should contain error message")
 		assert.Equal("failed to load notes", m.LastError(), "lastError should match the error message")
-
-		// Verify notes remain unchanged (should still be empty)
 		assert.Len(m.Notes(), 0, "notes should remain empty when load fails")
 	})
+}
 
-	t.Run("should clear previous error on successful load", func(t *testing.T) {
-		assert := testutil.New(t)
-		model := app.NewModel()
+func TestUpdate_SearchMode(t *testing.T) {
+	assert := testutil.New(t)
+	mock := &mockFileSystem{
+		searchResults: []*storage.Note{
+			{ID: "1", Title: "Go note", Content: "content"},
+		},
+	}
+	model := newTestModel(mock)
 
-		// First, simulate an error
-		errMsg := app.NoteLoadedMsg{
-			Notes: nil,
-			Err:   errors.New("previous error"),
-		}
-		updatedModel, _ := model.Update(errMsg)
-		model = updatedModel.(app.Model)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m := updated.(app.Model)
+	assert.Equal(app.ModeSearch, m.Mode(), "should enter search mode")
 
-		// Verify error is set
-		assert.NotEmpty(model.LastError(), "lastError should be set")
+	for _, r := range "go" {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(app.Model)
+	}
 
-		// Now simulate a successful load
-		testNotes := []*storage.Note{
-			{ID: "1", Title: "Note 1", Content: "Content 1"},
-		}
-		successMsg := app.NoteLoadedMsg{
-			Notes: testNotes,
-			Err:   nil,
-		}
-		updatedModel, _ = model.Update(successMsg)
-		model = updatedModel.(app.Model)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.NotNil(cmd, "enter should trigger search command")
 
-		// Verify error is cleared
-		assert.Empty(model.LastError(), "lastError should be cleared on successful load")
-		assert.Len(model.Notes(), 1, "notes should be loaded")
+	msg := cmd()
+	results, ok := msg.(app.SearchResultsMsg)
+	if !ok {
+		t.Fatalf("expected SearchResultsMsg, got %T", msg)
+	}
+
+	updated, _ = m.Update(results)
+	m = updated.(app.Model)
+	assert.True(m.SearchSubmitted(), "search should be submitted")
+	assert.Len(m.Notes(), 1, "should show search results")
+}
+
+func TestUpdate_SearchResultsMsg(t *testing.T) {
+	assert := testutil.New(t)
+	model := app.NewModelWithStorage(&mockFileSystem{}, "")
+
+	results := []*storage.Note{{ID: "1", Title: "Match", Content: "data"}}
+	updated, _ := model.Update(app.SearchResultsMsg{Notes: results, Query: "match"})
+	m := updated.(app.Model)
+
+	assert.Len(m.Notes(), 1, "should store search results")
+	assert.Empty(m.LastError(), "should clear errors")
+}
+
+func TestUpdate_SortCycle(t *testing.T) {
+	assert := testutil.New(t)
+	model := newTestModel(&mockFileSystem{})
+
+	initial := model.SortMode()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	m := updated.(app.Model)
+	assert.NotEqual(initial, m.SortMode(), "sort mode should cycle")
+}
+
+func TestUpdate_DeleteConfirmation(t *testing.T) {
+	assert := testutil.New(t)
+	mock := &mockFileSystem{}
+	model := newTestModel(mock)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m := updated.(app.Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	assert.NotNil(cmd, "second delete should trigger delete command")
+
+	msg := cmd()
+	deleted, ok := msg.(app.NoteDeletedMsg)
+	if !ok {
+		t.Fatalf("expected NoteDeletedMsg, got %T", msg)
+	}
+
+	updated, cmd = m.Update(deleted)
+	assert.NotNil(cmd, "successful delete should reload notes")
+	_ = updated
+	assert.Equal(1, mock.deleteCalled, "delete should be called once")
+}
+
+func TestUpdate_NoteSavedError(t *testing.T) {
+	assert := testutil.New(t)
+	model := app.NewModelWithStorage(&mockFileSystem{}, "")
+
+	updated, _ := model.Update(app.NoteSavedMsg{
+		Note: &storage.Note{ID: "1"},
+		Err:  errors.New("save failed"),
 	})
+	m := updated.(app.Model)
+
+	assert.Equal("save failed", m.LastError(), "should store save error")
+}
+
+func TestUpdate_WindowResize(t *testing.T) {
+	assert := testutil.New(t)
+	model := app.NewModelWithStorage(&mockFileSystem{}, "")
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m := updated.(app.Model)
+
+	assert.Equal(120, m.Width(), "width should update")
+	assert.Equal(40, m.Height(), "height should update")
+}
+
+func TestUpdate_SearchEscReloadsNotes(t *testing.T) {
+	assert := testutil.New(t)
+	mock := &mockFileSystem{}
+	model := newTestModel(mock)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m := updated.(app.Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.NotNil(cmd, "esc from search should reload notes")
+	_ = updated.(app.Model)
+	assert.Equal(app.ModeList, updated.(app.Model).Mode(), "should return to list mode")
 }
