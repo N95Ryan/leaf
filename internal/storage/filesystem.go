@@ -21,6 +21,3 @@ type FileSystem interface {
 	// SearchNotes searches notes by title or content
 	SearchNotes(ctx context.Context, query string) ([]*Note, error)
 }
-
-// TODO: Implement concrete FileSystem using the filesystem
-// Default directory will be ~/.leaf/notes/

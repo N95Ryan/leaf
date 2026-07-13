@@ -9,14 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Message represents the different types of messages in the Elm pattern
-type Message interface{}
-
-// KeyMsg represents a key press
-type KeyMsg struct {
-	Key string
-}
-
 // NoteLoadedMsg is sent when notes are loaded
 type NoteLoadedMsg struct {
 	Notes []*storage.Note
@@ -35,8 +27,14 @@ type NoteDeletedMsg struct {
 	Err    error
 }
 
+// SearchResultsMsg is sent when search completes
+type SearchResultsMsg struct {
+	Notes []*storage.Note
+	Query string
+	Err   error
+}
+
 // Update handles messages and returns a new model (Elm Pattern)
-// This function must be pure: no side effects, only state mutation
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -45,66 +43,72 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.applyWindowSize()
 		return m, nil
 
 	case NoteLoadedMsg:
 		if msg.Err != nil {
-			// Store error message to display in view
 			m.lastError = msg.Err.Error()
 			return m, nil
 		}
-		// Clear any previous error and store loaded notes
 		m.lastError = ""
 		m.notes = msg.Notes
-		m.sortNotes() // Apply current sort mode
+		m.sortNotes()
+		if m.selectedIdx >= len(m.notes) {
+			m.selectedIdx = max(0, len(m.notes)-1)
+		}
 		return m, nil
 
 	case NoteSavedMsg:
 		if msg.Err != nil {
-			// Store error message to display in view
 			m.lastError = msg.Err.Error()
 			return m, nil
 		}
-		// Clear any previous error and reload notes to show the new one
 		m.lastError = ""
 		m.creatingNote = nil
-		m.sortNotes() // Apply current sort mode after saving
 		return m, loadNotesCmd(m.storage)
 
 	case NoteDeletedMsg:
 		if msg.Err != nil {
-			// Store error message to display in view
 			m.lastError = msg.Err.Error()
 			m.deleteConfirm = false
 			m.noteToDelete = nil
 			return m, nil
 		}
-		// Clear any previous error and reload notes
 		m.lastError = ""
 		m.deleteConfirm = false
 		m.noteToDelete = nil
 		return m, loadNotesCmd(m.storage)
+
+	case SearchResultsMsg:
+		if msg.Err != nil {
+			m.lastError = msg.Err.Error()
+			return m, nil
+		}
+		m.lastError = ""
+		m.notes = msg.Notes
+		m.selectedIdx = 0
+		m.searchSubmitted = true
+		m.sortNotes()
+		return m, nil
 
 	default:
 		return m, nil
 	}
 }
 
-// handleKeyPress handles key presses based on current mode
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Special handling for ModeCreate: delegate based on editMode
 	if m.mode == ModeCreate {
 		return m.handleCreateMode(msg)
 	}
-
-	// Special handling for ModeEdit: delegate to textarea
 	if m.mode == ModeEdit {
 		return m.handleEditMode(msg)
 	}
-
-	// Special handling for ModeView: read-only mode
 	if m.mode == ModeView {
 		return m.handleViewMode(msg)
+	}
+	if m.mode == ModeSearch {
+		return m.handleSearchMode(msg)
 	}
 
 	switch msg.String() {
@@ -112,20 +116,18 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "n":
-		// Create a new note
 		if m.mode == ModeList {
 			m.mode = ModeCreate
-			m.editMode = "title"         // Start with title
-			m.titleInput.SetValue("")    // Reset input
-			m.titleInput.Focus()         // Ensure it has focus
-			m.contentEditor.SetValue("") // Reset content
-			m.contentEditor.Blur()       // Blur content editor
-			m.creatingNote = nil         // Clear any previous note
+			m.editMode = "title"
+			m.titleInput.SetValue("")
+			m.titleInput.Focus()
+			m.contentEditor.SetValue("")
+			m.contentEditor.Blur()
+			m.creatingNote = nil
 			return m, nil
 		}
 
 	case "r":
-		// View selected note (read-only)
 		if m.mode == ModeList && len(m.notes) > 0 {
 			m.mode = ModeView
 			m.currentNote = m.notes[m.selectedIdx]
@@ -133,14 +135,11 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "e":
-		// Edit selected note
 		if m.mode == ModeList && len(m.notes) > 0 {
 			m.mode = ModeEdit
 			m.currentNote = m.notes[m.selectedIdx]
-			// Load note title and content into editors
 			m.titleInput.SetValue(m.currentNote.Title)
 			m.contentEditor.SetValue(m.currentNote.Content)
-			// Start with content focused
 			m.editFocus = "content"
 			m.titleInput.Blur()
 			m.contentEditor.Focus()
@@ -148,71 +147,60 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "/":
-		// Activate search
 		if m.mode == ModeList {
 			m.mode = ModeSearch
-			m.searchQuery = ""
+			m.searchInput.SetValue("")
+			m.searchInput.Focus()
+			m.searchSubmitted = false
 			return m, nil
 		}
 
 	case "t":
-		// Cycle through sort modes
 		if m.mode == ModeList {
-			m.sortMode = (m.sortMode + 1) % 6 // Cycle through 6 sort modes
+			m.sortMode = (m.sortMode + 1) % 6
 			m.sortNotes()
-			m.deleteConfirm = false // Cancel delete confirmation
+			m.deleteConfirm = false
 			m.noteToDelete = nil
 			return m, nil
 		}
 
 	case "d":
-		// Delete selected note (with confirmation)
 		if m.mode == ModeList && len(m.notes) > 0 {
 			if !m.deleteConfirm {
-				// First press: ask for confirmation
 				m.deleteConfirm = true
 				m.noteToDelete = m.notes[m.selectedIdx]
 				return m, nil
-			} else {
-				// Second press: confirm deletion
-				if m.noteToDelete != nil {
-					note := m.noteToDelete
-					m.deleteConfirm = false
-					m.noteToDelete = nil
-					return m, deleteNoteCmd(m.storage, note.ID)
-				}
+			}
+			if m.noteToDelete != nil {
+				note := m.noteToDelete
+				m.deleteConfirm = false
+				m.noteToDelete = nil
+				return m, deleteNoteCmd(m.storage, note.ID)
 			}
 		}
 
 	case "esc":
-		// Cancel delete confirmation if active
 		if m.deleteConfirm {
 			m.deleteConfirm = false
 			m.noteToDelete = nil
 			return m, nil
 		}
-		// Return to list
 		if m.mode == ModeView || m.mode == ModeEdit || m.mode == ModeSearch || m.mode == ModeCreate {
-			m.mode = ModeList
-			m.currentNote = nil
-			m.searchQuery = ""
-			return m, nil
+			return m.exitToList(false)
 		}
 
 	case "j", "down":
-		// Navigate down in list
 		if m.mode == ModeList && m.selectedIdx < len(m.notes)-1 {
 			m.selectedIdx++
-			m.deleteConfirm = false // Cancel delete confirmation on navigation
+			m.deleteConfirm = false
 			m.noteToDelete = nil
 			return m, nil
 		}
 
 	case "k", "up":
-		// Navigate up in list
 		if m.mode == ModeList && m.selectedIdx > 0 {
 			m.selectedIdx--
-			m.deleteConfirm = false // Cancel delete confirmation on navigation
+			m.deleteConfirm = false
 			m.noteToDelete = nil
 			return m, nil
 		}
@@ -221,29 +209,79 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleCreateMode handles key presses in ModeCreate
+func (m Model) exitToList(reload bool) (Model, tea.Cmd) {
+	m.mode = ModeList
+	m.currentNote = nil
+	m.searchInput.SetValue("")
+	m.searchInput.Blur()
+	m.searchSubmitted = false
+	if reload && m.storage != nil {
+		return m, loadNotesCmd(m.storage)
+	}
+	return m, nil
+}
+
+func (m Model) handleSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m.exitToList(true)
+
+	case "enter":
+		if m.storage == nil {
+			return m, nil
+		}
+		query := strings.TrimSpace(m.searchInput.Value())
+		if query == "" {
+			return m, nil
+		}
+		return m, searchNotesCmd(m.storage, query)
+
+	case "r":
+		if m.searchSubmitted && len(m.notes) > 0 {
+			m.mode = ModeView
+			m.currentNote = m.notes[m.selectedIdx]
+			return m, nil
+		}
+
+	case "j", "down":
+		if m.searchSubmitted && m.selectedIdx < len(m.notes)-1 {
+			m.selectedIdx++
+			return m, nil
+		}
+
+	case "k", "up":
+		if m.searchSubmitted && m.selectedIdx > 0 {
+			m.selectedIdx--
+			return m, nil
+		}
+
+	default:
+		if !m.searchSubmitted {
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			return m, cmd
+		}
+	}
+
+	return m, nil
+}
+
 func (m Model) handleCreateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// If we're editing title
 	if m.editMode == "title" {
 		switch msg.String() {
 		case "esc":
-			// Cancel creation and return to list
-			m.mode = ModeList
-			m.editMode = "title"
-			m.titleInput.SetValue("")
-			m.contentEditor.SetValue("")
-			m.creatingNote = nil
-			return m, nil
+			updated, cmd := m.exitToList(false)
+			updated.editMode = "title"
+			updated.titleInput.SetValue("")
+			updated.contentEditor.SetValue("")
+			updated.creatingNote = nil
+			return updated, cmd
 
 		case "enter":
-			// Confirm title and move to content editing
 			title := m.titleInput.Value()
 			if title == "" {
-				// Don't proceed with empty title
 				return m, nil
 			}
-
-			// Switch to content editing mode
 			m.editMode = "content"
 			m.titleInput.Blur()
 			m.contentEditor.Focus()
@@ -251,43 +289,33 @@ func (m Model) handleCreateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		default:
-			// Delegate to textinput
 			var cmd tea.Cmd
 			m.titleInput, cmd = m.titleInput.Update(msg)
 			return m, cmd
 		}
 	}
 
-	// If we're editing content
 	if m.editMode == "content" {
 		switch msg.String() {
 		case "esc":
-			// Go back to title editing
 			m.editMode = "title"
 			m.contentEditor.Blur()
 			m.titleInput.Focus()
 			return m, nil
 
 		case "ctrl+s":
-			// Save the note with content
 			if m.creatingNote == nil {
 				return m, nil
 			}
-
-			// Update note content
 			m.creatingNote.Content = m.contentEditor.Value()
-
-			// Reset and return to list
+			note := m.creatingNote
 			m.mode = ModeList
 			m.editMode = "title"
 			m.titleInput.SetValue("")
 			m.contentEditor.SetValue("")
-
-			// Save asynchronously
-			return m, saveNoteCmd(m.storage, m.creatingNote)
+			return m, saveNoteCmd(m.storage, note)
 
 		default:
-			// Delegate to textarea
 			var cmd tea.Cmd
 			m.contentEditor, cmd = m.contentEditor.Update(msg)
 			return m, cmd
@@ -297,25 +325,20 @@ func (m Model) handleCreateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleViewMode handles key presses in ModeView (read-only)
 func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		// Return to list
 		m.mode = ModeList
 		m.currentNote = nil
 		return m, nil
 
 	case "i", "e":
-		// Switch to edit mode
 		if m.currentNote == nil {
 			return m, nil
 		}
 		m.mode = ModeEdit
-		// Load note title and content into editors
 		m.titleInput.SetValue(m.currentNote.Title)
 		m.contentEditor.SetValue(m.currentNote.Content)
-		// Start with content focused
 		m.editFocus = "content"
 		m.titleInput.Blur()
 		m.contentEditor.Focus()
@@ -325,11 +348,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleEditMode handles key presses in ModeEdit
 func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		// Cancel editing and return to list
 		m.mode = ModeList
 		m.currentNote = nil
 		m.titleInput.SetValue("")
@@ -340,7 +361,6 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "tab":
-		// Toggle focus between title and content
 		if m.editFocus == "title" {
 			m.editFocus = "content"
 			m.titleInput.Blur()
@@ -353,37 +373,27 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "ctrl+s":
-		// Save the edited note
 		if m.currentNote == nil {
 			return m, nil
 		}
-
-		// Update note title and content
 		newTitle := m.titleInput.Value()
 		if newTitle == "" {
-			// Don't save with empty title
 			m.lastError = "Title cannot be empty"
 			return m, nil
 		}
-
 		m.currentNote.Title = newTitle
 		m.currentNote.Content = m.contentEditor.Value()
-
-		// Return to list
-		m.mode = ModeList
 		note := m.currentNote
+		m.mode = ModeList
 		m.currentNote = nil
 		m.titleInput.SetValue("")
 		m.titleInput.Blur()
 		m.contentEditor.SetValue("")
 		m.contentEditor.Blur()
 		m.editFocus = "content"
-
-		// Save asynchronously
 		return m, saveNoteCmd(m.storage, note)
 
 	default:
-		// Delegate to the focused component
 		var cmd tea.Cmd
 		if m.editFocus == "title" {
 			m.titleInput, cmd = m.titleInput.Update(msg)
@@ -394,46 +404,34 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// loadNotesCmd is a command that loads all notes from storage
-// It runs asynchronously and returns a NoteLoadedMsg
 func loadNotesCmd(fs storage.FileSystem) tea.Cmd {
 	return func() tea.Msg {
-		// Use background context for loading notes
 		notes, err := fs.ListNotes(context.Background())
-		return NoteLoadedMsg{
-			Notes: notes,
-			Err:   err,
-		}
+		return NoteLoadedMsg{Notes: notes, Err: err}
 	}
 }
 
-// saveNoteCmd is a command that saves a note to storage
-// It runs asynchronously and returns a NoteSavedMsg
 func saveNoteCmd(fs storage.FileSystem, note *storage.Note) tea.Cmd {
 	return func() tea.Msg {
-		// Use background context for saving note
 		err := fs.SaveNote(context.Background(), note)
-		return NoteSavedMsg{
-			Note: note,
-			Err:  err,
-		}
+		return NoteSavedMsg{Note: note, Err: err}
 	}
 }
 
-// deleteNoteCmd is a command that deletes a note from storage
-// It runs asynchronously and returns a NoteDeletedMsg
 func deleteNoteCmd(fs storage.FileSystem, noteID string) tea.Cmd {
 	return func() tea.Msg {
-		// Use background context for deleting note
 		err := fs.DeleteNote(context.Background(), noteID)
-		return NoteDeletedMsg{
-			NoteID: noteID,
-			Err:    err,
-		}
+		return NoteDeletedMsg{NoteID: noteID, Err: err}
 	}
 }
 
-// sortNotes sorts the notes list according to the current sort mode
+func searchNotesCmd(fs storage.FileSystem, query string) tea.Cmd {
+	return func() tea.Msg {
+		notes, err := fs.SearchNotes(context.Background(), query)
+		return SearchResultsMsg{Notes: notes, Query: query, Err: err}
+	}
+}
+
 func (m *Model) sortNotes() {
 	switch m.sortMode {
 	case SortByUpdatedDesc:

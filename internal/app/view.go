@@ -3,10 +3,12 @@ package app
 import (
 	"fmt"
 	"strings"
+
+	"github.com/N95Ryan/leaf/internal/markdown"
+	"github.com/N95Ryan/leaf/internal/ui"
 )
 
 // View renders the user interface based on model state (Elm Pattern)
-// This function must be pure: no logic, only rendering
 func (m Model) View() string {
 	switch m.mode {
 	case ModeList:
@@ -24,153 +26,178 @@ func (m Model) View() string {
 	}
 }
 
-// renderList displays the list of notes
 func (m Model) renderList() string {
 	var b strings.Builder
-
-	b.WriteString("🌱 Leaf - Note Manager\n\n")
+	b.WriteString(ui.RenderAppTitle("Leaf 🌴 - Note Manager"))
+	b.WriteString("\n\n")
 
 	if len(m.notes) == 0 {
-		b.WriteString("No notes. Press 'n' to create a note.\n")
+		b.WriteString(ui.ListItemStyle.Render("No notes. Press 'n' to create a note."))
+		b.WriteString("\n")
 	} else {
-		for i, note := range m.notes {
-			prefix := "  "
-			if i == m.selectedIdx {
-				prefix = "> "
-			}
-			b.WriteString(fmt.Sprintf("%s%s\n", prefix, note.Title))
-		}
+		b.WriteString(ui.RenderNoteList(m.notes, m.selectedIdx))
+		b.WriteString("\n")
 	}
 
-	b.WriteString("\nShortcuts: n (new), r (read), e (edit), t (sort), d (delete), q (quit)")
-	b.WriteString(m.renderSortIndicator())
-	b.WriteString(m.renderDeleteConfirm())
-	b.WriteString(m.renderError())
+	b.WriteString("\n")
+	b.WriteString(ui.RenderShortcuts(ui.ListShortcuts))
+	b.WriteString("\n")
+	b.WriteString(ui.RenderSortIndicator(m.sortName()))
+	if m.deleteConfirm && m.noteToDelete != nil {
+		b.WriteString("\n")
+		b.WriteString(ui.RenderDeleteConfirm(m.noteToDelete.Title))
+	}
+	if err := ui.RenderError(m.lastError); err != "" {
+		b.WriteString("\n")
+		b.WriteString(err)
+	}
 
 	return b.String()
 }
 
-// renderView displays the note in read-only mode
 func (m Model) renderView() string {
 	if m.currentNote == nil {
-		return "No note selected"
+		return ui.RenderError("No note selected")
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("📖 %s\n\n", m.currentNote.Title))
-	b.WriteString(m.currentNote.Content)
-	b.WriteString("\n\nShortcuts: i/e (edit), Esc (back to list)")
-	b.WriteString(m.renderError())
+	b.WriteString(ui.RenderViewHeader(m.currentNote.Title))
+	b.WriteString("\n\n")
+
+	content := m.currentNote.Content
+	if m.renderMarkdown {
+		rendered, err := markdown.Render(content, m.contentWidth())
+		if err != nil {
+			b.WriteString(content)
+			b.WriteString("\n\n")
+			b.WriteString(ui.RenderError(err.Error()))
+		} else {
+			b.WriteString(rendered)
+		}
+	} else {
+		b.WriteString(content)
+	}
+
+	b.WriteString("\n\n")
+	b.WriteString(ui.RenderShortcuts(ui.ViewShortcuts))
+	if err := ui.RenderError(m.lastError); err != "" {
+		b.WriteString("\n")
+		b.WriteString(err)
+	}
 
 	return b.String()
 }
 
-// renderEdit displays the note editor
 func (m Model) renderEdit() string {
 	if m.currentNote == nil {
-		return "No note selected"
+		return ui.RenderError("No note selected")
 	}
 
 	var b strings.Builder
-	b.WriteString("✏️  Editing note\n\n")
+	b.WriteString(ui.RenderSectionTitle("Editing note"))
+	b.WriteString("\n\n")
 
-	// Show title input
 	focusIndicator := " "
 	if m.editFocus == "title" {
-		focusIndicator = "›"
+		focusIndicator = ">"
 	}
 	b.WriteString(fmt.Sprintf("%s Title:\n", focusIndicator))
 	b.WriteString(m.titleInput.View())
 	b.WriteString("\n\n")
 
-	// Show content editor
 	focusIndicator = " "
 	if m.editFocus == "content" {
-		focusIndicator = "›"
+		focusIndicator = ">"
 	}
 	b.WriteString(fmt.Sprintf("%s Content:\n", focusIndicator))
-	b.WriteString(m.contentEditor.View())
+	b.WriteString(ui.RenderEditorSection(m.contentEditor.View()))
 
-	b.WriteString("\n\nShortcuts: Tab (switch field), Ctrl+S (save), Esc (cancel)")
-	b.WriteString(m.renderError())
+	b.WriteString("\n\n")
+	b.WriteString(ui.RenderShortcuts(ui.EditShortcuts))
+	if err := ui.RenderError(m.lastError); err != "" {
+		b.WriteString("\n")
+		b.WriteString(err)
+	}
 
 	return b.String()
 }
 
-// renderSearch displays the search interface
 func (m Model) renderSearch() string {
 	var b strings.Builder
-	b.WriteString("Search: ")
-	b.WriteString(m.searchQuery)
-	b.WriteString("_\n\n")
-	b.WriteString("Type your search and press 'esc' to cancel")
-	b.WriteString(m.renderError())
+	b.WriteString(ui.RenderSearchBar(m.searchInput))
+	b.WriteString("\n\n")
+
+	if m.searchSubmitted {
+		if len(m.notes) == 0 {
+			b.WriteString(ui.ListItemStyle.Render("No matching notes."))
+		} else {
+			b.WriteString(ui.RenderNoteList(m.notes, m.selectedIdx))
+		}
+		b.WriteString("\n\n")
+		b.WriteString(ui.RenderShortcuts(ui.SearchResultsShortcuts))
+	} else {
+		b.WriteString(ui.RenderShortcuts(ui.SearchInputShortcuts))
+	}
+
+	if err := ui.RenderError(m.lastError); err != "" {
+		b.WriteString("\n")
+		b.WriteString(err)
+	}
 
 	return b.String()
 }
 
-// renderCreate displays the note creation interface
 func (m Model) renderCreate() string {
 	var b strings.Builder
+	b.WriteString(ui.RenderTitle("Create a new note"))
+	b.WriteString("\n\n")
 
-	b.WriteString("🌱 Create a new note\n\n")
-
-	// Show title input or content editor based on editMode
 	if m.editMode == "title" {
 		b.WriteString("Title:\n")
 		b.WriteString(m.titleInput.View())
 		b.WriteString("\n\n")
-		b.WriteString("Shortcuts: Enter (next), Esc (cancel)")
+		b.WriteString(ui.RenderShortcuts(ui.CreateTitleShortcuts))
 	} else {
-		// Show title as read-only and content editor
 		if m.creatingNote != nil {
 			b.WriteString(fmt.Sprintf("Title: %s\n\n", m.creatingNote.Title))
 		}
 		b.WriteString("Content:\n")
-		b.WriteString(m.contentEditor.View())
+		b.WriteString(ui.RenderEditorSection(m.contentEditor.View()))
 		b.WriteString("\n\n")
-		b.WriteString("Shortcuts: Ctrl+S (save), Esc (back to title)")
+		b.WriteString(ui.RenderShortcuts(ui.CreateContentShortcuts))
 	}
 
-	b.WriteString(m.renderError())
+	if err := ui.RenderError(m.lastError); err != "" {
+		b.WriteString("\n")
+		b.WriteString(err)
+	}
 
 	return b.String()
 }
 
-// renderDeleteConfirm displays the delete confirmation message
-func (m Model) renderDeleteConfirm() string {
-	if !m.deleteConfirm || m.noteToDelete == nil {
-		return ""
-	}
-	return fmt.Sprintf("\n⚠️  Press 'd' again to confirm deletion of '%s' (Esc to cancel)", m.noteToDelete.Title)
-}
-
-// renderSortIndicator displays the current sort mode
-func (m Model) renderSortIndicator() string {
-	var sortName string
+func (m Model) sortName() string {
 	switch m.sortMode {
 	case SortByUpdatedDesc:
-		sortName = "Updated ↓"
+		return "Updated (newest)"
 	case SortByUpdatedAsc:
-		sortName = "Updated ↑"
+		return "Updated (oldest)"
 	case SortByCreatedDesc:
-		sortName = "Created ↓"
+		return "Created (newest)"
 	case SortByCreatedAsc:
-		sortName = "Created ↑"
+		return "Created (oldest)"
 	case SortByTitleAsc:
-		sortName = "Title A-Z"
+		return "Title A-Z"
 	case SortByTitleDesc:
-		sortName = "Title Z-A"
+		return "Title Z-A"
+	default:
+		return "Unknown"
 	}
-	return fmt.Sprintf("\n[Sort: %s]", sortName)
 }
 
-// renderError displays error messages if any
-func (m Model) renderError() string {
-	if m.lastError == "" {
-		return ""
+func (m Model) contentWidth() int {
+	width := m.width - 4
+	if width < 20 {
+		return 80
 	}
-	return fmt.Sprintf("\n❌ Error: %s\n", m.lastError)
+	return width
 }
-
-// TODO: Add Lipgloss styling to improve appearance
