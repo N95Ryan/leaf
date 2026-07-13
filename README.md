@@ -29,6 +29,7 @@ Go 1.21+ can auto-download the required toolchain when you run `go` commands.
 ### Option 1 — Clone and run (Git Bash / Linux / macOS)
 
 ```bash
+# Clone the repository
 git clone https://github.com/N95Ryan/leaf.git
 cd leaf
 go mod download
